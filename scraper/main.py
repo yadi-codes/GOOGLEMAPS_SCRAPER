@@ -31,58 +31,50 @@ def scrape_and_store(scraper, db, category, location, max_results):
     print(f"📊 Max results: {max_results}")
     print("-" * 40)
     
-    # Start scraping
     results = scraper.search_and_scrape(category, location, max_results=max_results)
-    
+
     if not results:
         print("❌ No results found or scraping failed.")
         return
-    
+
     print(f"\n💾 Storing {len(results)} results in database...")
     stored_count = 0
-    
-    for i, result in enumerate(results, 1):
+
+    for i, place_data in enumerate(results, 1):
         try:
-            # Check if place already exists
-            if db.place_exists(result['name'], result.get('address')):
-                print(f"⚠️  Place already exists: {result['name']}")
+            # Ensure 'category' exists
+            if 'category' not in place_data or not place_data['category']:
+                place_data['category'] = 'Unknown'
+
+            print(f"DEBUG - Data being stored: {place_data}")
+            print(f"DEBUG - Category type: {type(place_data.get('category'))}")
+            print(f"DEBUG - Category value: {repr(place_data.get('category'))}")
+
+            # Check if already exists
+            if db.place_exists(place_data['name'], place_data.get('address', '')):
+                print(f"⚠️  Already exists: {place_data['name']}")
                 continue
-            
-            # Store place data
-            place_data = {
-                'name': result['name'],
-                'address': result.get('address'),
-                'phone': result.get('phone'),
-                'rating': result.get('rating'),
-                'review_count': result.get('review_count'),
-                'scraped_at': result.get('scraped_at'),
-                'latitude': result.get('latitude'),
-                'longitude': result.get('longitude')
-            }
-            if 'category' not in result or not result['category']:
-                result['category'] = 'Unknown'
 
             place_id = db.insert_place(place_data)
-            
-            # Store category if available
-            if result.get('category'):
-                db.insert_categories(place_id, [result['category']])
-            
+
+            # Store category
+            db.insert_categories(place_id, [place_data['category']])
+
             db.commit()
             stored_count += 1
-            print(f"✅ Stored ({i}/{len(results)}): {result['name']}")
-            
+            print(f"✅ Stored ({i}/{len(results)}): {place_data['name']}")
+
         except Exception as e:
-            print(f"❌ Error storing {result.get('name', 'Unknown')}: {str(e)}")
+            print(f"❌ Error storing {place_data.get('name', 'Unknown')}: {str(e)}")
             try:
                 db.conn.rollback()
             except:
                 pass
-        
-        # Small delay between insertions
+
         time.sleep(0.5)
-    
+
     print(f"\n🎉 Successfully stored {stored_count} new places!")
+
 
 def query_data(db):
     """Query stored data with simplified interface"""

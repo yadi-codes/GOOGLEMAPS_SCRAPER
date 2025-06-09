@@ -101,7 +101,10 @@ class BusinessExtractor:
                     return elem.text.strip()
             except:
                 continue
-        return element.get_attribute("aria-label") or None
+        name = element.get_attribute("aria-label")
+        if name and '<' not in name and 'function' not in name.lower():
+            return name.strip()
+        return None
 
     def _extract_address(self, element):
         selectors = [

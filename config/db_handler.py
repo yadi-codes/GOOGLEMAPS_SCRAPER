@@ -29,6 +29,23 @@ class DatabaseHandler:
     
     def insert_place(self, place_data):
         """Insert a new place into the database"""
+
+        # ADD THIS VALIDATION:
+        # Ensure all string fields are actually strings
+        for field in ['name', 'address', 'phone', 'category']:
+            if field in place_data and place_data[field] is not None:
+                if isinstance(place_data[field], bytes):
+                    place_data[field] = place_data[field].decode('utf-8')
+                else:
+                    place_data[field] = str(place_data[field])
+        
+        # Ensure numeric fields are proper types
+        if 'rating' in place_data and place_data['rating'] is not None:
+            place_data['rating'] = float(place_data['rating'])
+        if 'review_count' in place_data and place_data['review_count'] is not None:
+            place_data['review_count'] = int(place_data['review_count'])
+
+
         query = """
         INSERT INTO places (
             name, address, phone, rating, review_count, 
@@ -38,8 +55,13 @@ class DatabaseHandler:
             %(category)s, %(scraped_at)s, %(latitude)s, %(longitude)s
         )
         """
-        self.cur.execute(query, place_data)
-        return self.cur.lastrowid  # Get the auto-incremented ID
+        try:
+            self.cur.execute(query, place_data)
+            return self.cur.lastrowid
+        except Exception as e:
+            print(f"Database insertion error: {e}")
+            print(f"Problematic data: {place_data}")
+            raise
     
     def insert_categories(self, place_id, categories):
         """Insert place categories into place_categories table"""
@@ -114,7 +136,7 @@ class DatabaseHandler:
     def get_places_by_category(self, category):
         """Retrieve places by category"""
         query = """
-        SELECT p.*, GROUP_CONCAT(pc.category) as category
+        SELECT p.*, GROUP_CONCAT(c.name) as category
         FROM places p
         JOIN place_categories pc ON p.id = pc.place_id
         JOIN categories c ON pc.category_id = c.id
@@ -123,6 +145,7 @@ class DatabaseHandler:
         """
         self.cur.execute(query, (f"%{category}%",))
         return self.cur.fetchall()
+
 
     def get_places_by_location(self, location):
         """Retrieve places by location (address search)"""
