@@ -22,11 +22,16 @@ class DatabaseHandler:
             raise
     
     def place_exists(self, name, address):
-        """Check if a place already exists in the database by name and address"""
-        query = "SELECT id FROM places WHERE name = %s AND address = %s"
-        self.cur.execute(query, (name, address))
+        """Looser match to handle minor differences in address formatting"""
+        cleaned_address = address.replace('\ue0c8', '').replace('\n', '').strip()
+        query = "SELECT id FROM places WHERE name = %s AND address LIKE %s"
+        self.cur.execute(query, (name.strip(), '%' + cleaned_address + '%'))
         return self.cur.fetchone()
+
     
+    def clean_address(address):
+        return address.replace('\ue0c8', '').replace('\n', '').strip()
+
     def insert_place(self, place_data):
         """Insert a new place into the database"""
 
@@ -128,11 +133,10 @@ class DatabaseHandler:
                 'text': review.get('text'),
                 'date': review.get('date'),
                 'images': json.dumps(review.get('images', [])),
-                'scraped_at': review.get('timestamp')
+                'scraped_at': review.get('scraped_at')
             }
             self.cur.execute(query, review_data)
     
-
     def get_places_by_category(self, category):
         """Retrieve places by category"""
         query = """
@@ -145,7 +149,6 @@ class DatabaseHandler:
         """
         self.cur.execute(query, (f"%{category}%",))
         return self.cur.fetchall()
-
 
     def get_places_by_location(self, location):
         """Retrieve places by location (address search)"""
