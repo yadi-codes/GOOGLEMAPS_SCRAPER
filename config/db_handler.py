@@ -21,14 +21,12 @@ class DatabaseHandler:
             print(f"Error connecting to MySQL: {e}")
             raise
     
-    def place_exists(self, name, address):
-        """Looser match to handle minor differences in address formatting"""
-        cleaned_address = address.replace('\ue0c8', '').replace('\n', '').strip()
-        query = "SELECT id FROM places WHERE name = %s AND address LIKE %s"
-        self.cur.execute(query, (name.strip(), '%' + cleaned_address + '%'))
+    def place_exists(self, name, latitude, longitude):
+        query = "SELECT id FROM places WHERE name = %s AND latitude = %s AND longitude = %s"
+        self.cur.execute(query, (name.strip(), latitude, longitude))
         return self.cur.fetchone()
 
-    
+
     def clean_address(address):
         return address.replace('\ue0c8', '').replace('\n', '').strip()
 
@@ -116,15 +114,15 @@ class DatabaseHandler:
         """Insert place reviews into place_reviews table"""
         if not reviews:
             return
-        
+
         query = """
-        INSERT INTO place_reviews (
+        INSERT IGNORE INTO place_reviews (
             place_id, author, rating, text, date, images, scraped_at
         ) VALUES (
             %(place_id)s, %(author)s, %(rating)s, %(text)s, %(date)s, %(images)s, %(scraped_at)s
         )
         """
-        
+
         for review in reviews:
             review_data = {
                 'place_id': place_id,
@@ -135,8 +133,9 @@ class DatabaseHandler:
                 'images': json.dumps(review.get('images', [])),
                 'scraped_at': review.get('scraped_at')
             }
+            print("blah blah")
             self.cur.execute(query, review_data)
-    
+  
     def get_places_by_category(self, category):
         """Retrieve places by category"""
         query = """
@@ -183,6 +182,35 @@ class DatabaseHandler:
         query = "SELECT * FROM places"
         self.cur.execute(query)
         return self.cur.fetchall()
+
+    def get_place_id_by_name(self, name):
+        query = "SELECT id FROM places WHERE name = %s"
+        self.cur.execute(query, (name.strip(),))
+        row = self.cur.fetchone()
+        return row[0] if row else None
+    
+    def get_reviews_by_place_id(self, place_id):
+        query = "SELECT author, rating, text, date, images FROM place_reviews WHERE place_id = %s"
+        self.cur.execute(query, (place_id,))
+        rows = self.cur.fetchall()
+        return [{
+            'author': row[0],
+            'rating': row[1],
+            'text': row[2],
+            'date': row[3],
+            'images': json.loads(row[4]) if row[4] else []
+        } for row in rows]
+
+    def get_media_by_place_id(self, place_id):
+        query = "SELECT images, videos FROM place_media WHERE place_id = %s"
+        self.cur.execute(query, (place_id,))
+        row = self.cur.fetchone()
+        if row:
+            return {
+                'images': json.loads(row[0]) if row[0] else [],
+                'videos': json.loads(row[1]) if row[1] else []
+            }
+        return {'images': [], 'videos': []}
 
     def commit(self):
         self.conn.commit()

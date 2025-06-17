@@ -9,7 +9,7 @@ import time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from datetime import datetime
+
 
 # Fix the import path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -390,69 +390,71 @@ class GoogleMapsScraper:
             return None
     
     def _extract_place_images(self, page):
-        """Extract place images using fallback selectors and scroll strategy"""
+        """Extract place images including background-style images"""
         images = []
         try:
-            # Try to open the photo gallery
+            # Possible buttons to open gallery
             photos_button_selectors = [
                 'button[aria-label*="Photos"]',
                 'button[aria-label*="View photos"]',
                 'button[aria-label*="See photos"]',
                 'button[aria-label*="Gallery"]',
-                'button[jsaction*="pane.photoGallery"]',    # Sometimes photo gallery is triggered via jsaction
-                'button[aria-label*="images"]',             # Sometimes labeled as "images"
-                'div[jsaction*="pane.photoGallery"]',  # Newer Google Maps uses div with jsaction  
+                'button[jsaction*="pane.photoGallery"]',
+                'div[jsaction*="pane.photoGallery"]'
             ]
 
-            photos_button = None
+            photos_button_clicked = False
+
             for selector in photos_button_selectors:
-                photos_button = page.query_selector(selector)
-                if photos_button:
-                    photos_button.click()
-                    time.sleep(3)
-                    break
+                try:
+                    button = page.query_selector(selector)
+                    if button and button.is_visible():
+                        button.click(timeout=5000)
+                        time.sleep(3)
+                        photos_button_clicked = True
+                        break
+                except Exception as e:
+                    print(f"⚠️ Error clicking button {selector}: {e}")
+                    continue
 
-            if not photos_button:
-                print("⚠️ Photos button not found or no gallery allowed.")
-                return []
+            if not photos_button_clicked:
+                print("⚠️ Photos button not found or not clickable. Trying to extract background images directly.")
 
-            # Scroll through gallery to load more images
+            # Scroll gallery even if photos button was not clicked
             for _ in range(10):
                 page.mouse.wheel(0, 1000)
                 time.sleep(2)
 
-            # Try multiple image selectors (Google changes these often)
-            image_selectors = [
-                'img[src^="https://lh3.googleusercontent.com"]',  # Primary
-                'img[src^="https://maps.gstatic.com"]',           # Google cached images
-                'img[src^="https://encrypted-tbn0.gstatic.com"]', # Thumbnail backups
-                'img[src^="https://"]'                            # Broad fallback
-            ]
+            image_urls = set()
 
-            found_images = []
-            for selector in image_selectors:
-                found_images = page.query_selector_all(selector)
-                if found_images:
-                    print(f"✅ Found {len(found_images)} images using selector: {selector}")
-                    break
+            # Extract <img> images
+            img_elements = page.query_selector_all('img[src^="https://"]')
+            for img in img_elements:
+                src = img.get_attribute('src')
+                if src and 'googleusercontent' in src:
+                    image_urls.add(src)
 
-            if not found_images:
+            # Extract background-image URLs from style attributes
+            bg_elements = page.query_selector_all('div[role="img"].U39Pmb')
+            for bg in bg_elements:
+                style = bg.get_attribute('style')
+                if style and 'background-image' in style:
+                    match = re.search(r'url\(&quot;(.*?)&quot;\)', style)
+                    if match:
+                        url = match.group(1)
+                        if url.startswith('https://'):
+                            image_urls.add(url)
+
+            if not image_urls:
                 print("⚠️ No images found with known selectors.")
                 return []
 
-            # Extract image URLs
-            for img in found_images:
-                src = img.get_attribute('src')
-                if src and 'googleusercontent' in src:
-                    images.append(src)
-
-            print(f"✅ Total unique images found: {len(set(images))}")
-            return list(set(images))  # Remove duplicates
+            print(f"✅ Total unique images found: {len(image_urls)}")
+            return list(image_urls)
 
         except Exception as e:
             print(f"⚠️ Error extracting images: {e}")
             return []
-
 
     def _extract_detail_panel_data(self, page, category=None):
         """IMPROVED: Extract comprehensive data from the opened business details panel"""
@@ -696,26 +698,46 @@ class GoogleMapsScraper:
             return None
 
     def _extract_reviews(self, page, place_id):
-        """Robust review extractor using fallback selectors"""
+        """Robust review extractor with smart container scrolling and fallbacks"""
         reviews = []
         try:
-            # Click on reviews button if needed
+            # Click on the reviews button if it exists
             reviews_button = page.query_selector('button[aria-label*="reviews"]')
             if reviews_button:
                 reviews_button.click()
                 time.sleep(3)
 
-            # Scroll to load more reviews
-            for _ in range(10):
-                page.mouse.wheel(0, 1000)
-                time.sleep(2)
+            # Confirm reviews panel has opened
+            reviews_container = page.query_selector('div[aria-label="Reviews"]')
+            if not reviews_container:
+                print("⚠️ Reviews container not found. Falling back to page scroll.")
+                for _ in range(10):
+                    page.mouse.wheel(0, 1000)
+                    time.sleep(2)
+            else:
+                # Scroll the reviews container specifically
+                for _ in range(15):
+                    reviews_container.evaluate('el => el.scrollBy(0, 1000)')
+                    time.sleep(1.5)
 
-            # Try multiple possible review card selectors
+            # Try to load more reviews by clicking "Show more" buttons
+            while True:
+                try:
+                    more_button = page.query_selector('button[aria-label*="Show more reviews"]')
+                    if more_button:
+                        more_button.click()
+                        time.sleep(2)
+                    else:
+                        break
+                except:
+                    break
+
+            # Review card selectors (updated)
             card_selectors = [
-                'div.jftiEf',              # Common review container
-                'div[data-review-id]',     # ID-based fallback
-                'div.gws-localreviews__google-review',  # Legacy class
-                'div[jscontroller="e6Mltc"]'  # Structured review container
+                'div[data-review-id]',               # Most stable review card
+                'div.jftiEf',                        # Common container
+                'div[aria-label="User review"]',     # Seen in some newer layouts
+                'div[jscontroller="e6Mltc"]'         # Fallback structured container
             ]
 
             review_cards = []
@@ -733,10 +755,10 @@ class GoogleMapsScraper:
                 try:
                     # AUTHOR
                     author_selectors = [
-                        'div.KFi5wf span',             # Common Google Maps structure
-                        '.TSUbDb .d4r55',              # Older or legacy layout
-                        'div[class*="d4r55"]',         # General fallback for class name
-                        'div[class*="X5PpBb"] span',   # Newer design sometimes uses this
+                        'div.KFi5wf span',
+                        '.TSUbDb .d4r55',
+                        'div[class*="d4r55"]',
+                        'div[class*="X5PpBb"] span'
                     ]
                     author = 'Unknown'
                     for sel in author_selectors:
@@ -744,7 +766,6 @@ class GoogleMapsScraper:
                         if el:
                             author = el.inner_text().strip()
                             break
-
 
                     # RATING
                     rating = None
@@ -760,7 +781,7 @@ class GoogleMapsScraper:
 
                     # TEXT
                     text = ''
-                    text_selectors = ['span.wiI7pd', '.review-full-text', '.Jtu6Td']
+                    text_selectors = ['span.wiI7pd', '.review-full-text', '.Jtu6Td', 'div.MyEned span']
                     for sel in text_selectors:
                         el = card.query_selector(sel)
                         if el:
@@ -780,7 +801,7 @@ class GoogleMapsScraper:
                     image_elements = card.query_selector_all('img[src^="https://"]')
                     images = [img.get_attribute('src') for img in image_elements if img.get_attribute('src')]
 
-                    # Skip totally empty reviews
+                    # Skip empty reviews
                     if not text and not rating:
                         print(f"⚠️ Skipping empty review (no text and no rating)")
                         continue
@@ -801,6 +822,7 @@ class GoogleMapsScraper:
 
         except Exception as e:
             print(f"❌ Error extracting reviews: {e}")
+
         return reviews
 
 
@@ -812,7 +834,8 @@ class GoogleMapsScraper:
             
             for place_data in results:
                 try:
-                    if not db.place_exists(place_data['name'], place_data.get('address', '')):
+                    if not db.place_exists(place_data['name'], place_data['latitude'], place_data['longitude']):
+
                         place_id = db.insert_place(place_data)
                         if place_id:
                             stored_count += 1
@@ -831,31 +854,30 @@ class GoogleMapsScraper:
         except Exception as e:
             print(f"❌ Database error: {e}")
 
-    def _store_single_place(self, place_data):
-        """Store a single place and return its ID"""
-        try:
-            # Clean the address BEFORE checking for existence and inserting
-            place_data['address'] = place_data['address'].replace('\ue0c8', '').replace('\n', '').strip()
+    def _clean_address(self, address):
+        return address.replace('\ue0c8', '').replace('\n', '').strip()
 
+    def _store_single_place(self, place_data):
+        """Store a single place and return its ID."""
+        try:
             db = DatabaseHandler()
-            if not db.place_exists(place_data['name'], place_data.get('address', '')):
+            if not db.place_exists(place_data['name'], place_data['latitude'], place_data['longitude']):
                 place_id = db.insert_place(place_data)
                 db.commit()
                 db.close()
                 if place_id:
-                    print(f"✅ Stored place: {place_data['name']}")
+                    print(f"✅ Stored: {place_data['name']}")
                     return place_id
                 else:
-                    print(f"❌ Failed to insert place: {place_data['name']}")
+                    print(f"❌ Failed to insert: {place_data['name']}")
                     return None
             else:
-                print(f"⚠️ Place already exists: {place_data['name']}")
+                print(f"⚠️ Already exists: {place_data['name']}")
                 db.close()
                 return None
         except Exception as e:
             print(f"❌ Error storing place: {e}")
             return None
-
 
     def close(self):
         """Clean up resources"""
@@ -865,34 +887,3 @@ class GoogleMapsScraper:
         except:
             pass
 
-# Test function
-def test_scraper():
-    """Test the scraper with a simple search"""
-    scraper = GoogleMapsScraper(headless=False)  # Set to True for headless mode
-    
-    try:
-        results = scraper.search_and_scrape("restaurants", "New York", max_results=5)
-        
-        print(f"\n🎉 Test Results: {len(results)} places found")
-        print("-" * 50)
-        
-        for i, place in enumerate(results, 1):
-            print(f"\n{i}. {place.get('name', 'Unknown')}")
-            if place.get('rating'):
-                print(f"   ⭐ Rating: {place['rating']} ({place.get('review_count', 0)} reviews)")
-            if place.get('address'):
-                print(f"   📍 Address: {place['address']}")
-            if place.get('phone'):
-                print(f"   📞 Phone: {place['phone']}")
-            if place.get('latitude') and place.get('longitude'):
-                print(f"   🌍 Coordinates: {place['latitude']}, {place['longitude']}")
-            if place.get('category'):
-                print(f"   🏷️ Category: {place['category']}")
-            
-    except Exception as e:
-        print(f"Test error: {e}")
-    finally:
-        scraper.close()
-
-if __name__ == "__main__":
-    test_scraper()
