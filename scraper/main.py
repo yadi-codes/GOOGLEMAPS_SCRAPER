@@ -1,7 +1,5 @@
 import sys
 import os
-import time
-import random
 from datetime import datetime
 
 # Fix the import path

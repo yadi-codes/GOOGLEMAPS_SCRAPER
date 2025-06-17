@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps Data Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="container">
+                <h1 class="header-title">Google Maps Data Dashboard</h1>
+                <p class="header-subtitle">Manage and export your scraped business data</p>
+            </div>
+        </header>
+
+        <div class="container">
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Total Places</h3>
+                        <i class="fas fa-map-marker-alt"></i>
+                    </div>
+                    <div class="stat-value" id="totalPlaces">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Categories</h3>
+                        <i class="fas fa-tags"></i>
+                    </div>
+                    <div class="stat-value" id="totalCategories">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Avg Rating</h3>
+                        <i class="fas fa-star"></i>
+                    </div>
+                    <div class="stat-value" id="avgRating">0.0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Filtered Results</h3>
+                        <i class="fas fa-filter"></i>
+                    </div>
+                    <div class="stat-value" id="filteredCount">0</div>
+                </div>
+            </div>
+
+            <!-- Filters and Actions -->
+            <div class="card filters-card">
+                <div class="card-header">
+                    <h2>Filters & Actions</h2>
+                    <p>Search, filter, and export your data</p>
+                </div>
+                <div class="card-content">
+                    <div class="filters-row">
+                        <div class="search-container">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" id="searchInput" placeholder="Search by name, address, or category..." class="search-input">
+                        </div>
+                        <select id="categoryFilter" class="filter-select">
+                            <option value="all">All Categories</option>
+                        </select>
+                        <select id="ratingFilter" class="filter-select">
+                            <option value="all">All Ratings</option>
+                            <option value="4.0">4.0+ Stars</option>
+                            <option value="3.5">3.5+ Stars</option>
+                            <option value="3.0">3.0+ Stars</option>
+                            <option value="2.0">2.0+ Stars</option>
+                        </select>
+                        <div class="action-buttons">
+                            <button id="refreshBtn" class="btn btn-outline">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                            <button id="exportCsvBtn" class="btn btn-outline">
+                                <i class="fas fa-download"></i> CSV
+                            </button>
+                            <button id="exportPdfBtn" class="btn btn-outline">
+                                <i class="fas fa-file-pdf"></i> PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Table -->
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2>Business Data</h2>
+                    <p id="tableDescription">Loading data...</p>
+                </div>
+                <div class="card-content">
+                    <div class="table-container">
+                        <table class="data-table" id="dataTable">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Address</th>
+                                    <th>Phone</th>
+                                    <th>Rating</th>
+                                    <th>Reviews</th>
+                                    <th>Categories</th>
+                                    <th>Scraped</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <!-- Loading skeleton -->
+                                <tr class="loading-row">
+                                    <td colspan="7">
+                                        <div class="loading-container">
+                                            <div class="spinner"></div>
+                                            <span>Loading data...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <div class="toast-content">
+            <i class="toast-icon"></i>
+            <span class="toast-message"></span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -6,9 +6,6 @@ import re
 import os
 import sys
 import time
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 
 # Fix the import path
@@ -293,72 +290,40 @@ class GoogleMapsScraper:
         return results
 
     def _extract_by_clicking(self, page, element, index, category=None):
-        db = DatabaseHandler()
-
-        """IMPROVED: Extract data by clicking on the business card"""
+        """Extract data by clicking on the business card"""
         try:
             print(f"   🖱️ Clicking business {index} for detailed data...")
-            
+
             # Scroll element into view
             element.scroll_into_view_if_needed()
             time.sleep(1)
-            
+
             # Click the element
             element.click(timeout=5000)
 
-            # Wait explicitly for the detailed view to load by waiting for the unique selector that appears only in the detailed view
+            # Wait for detailed view to load
             try:
                 page.wait_for_selector('h1.DUwDvf.lfPIob', timeout=10000)
                 print(f"   ✅ Details panel loaded for business {index}")
             except:
                 print(f"   ⚠️ Details panel didn't load for business {index}")
                 return None
-            time.sleep(3)  # Increased wait time
-            
-            # Wait for business details to load
-            try:
-                page.wait_for_selector('h1, [data-attrid="title"], .DUwDvf', timeout=10000)
-                print(f"   ✅ Details panel loaded for business {index}")
+            time.sleep(3)
 
-            except:
-                print(f"   ⚠️ Details panel didn't load for business {index}")
-                return None
-            
             # Extract data from the details panel
             data = self._extract_detail_panel_data(page, category)
             if not data:
                 print(f"   ⚠️ Failed to extract detail panel data for business {index}")
                 return None
 
-            place_id = self._store_single_place(data)  # You need this function to get the place_id immediately
-            if not place_id:
-                print(f"   ⚠️ Failed to store main place, skipping media and reviews")
-                return data
-
-            # Extract and store images
-            images = self._extract_place_images(page)
-            if images:
-                db.insert_media(place_id, {'images': images, 'videos': [], 'scraped_at': datetime.now()})
-
-            # Extract and store reviews
-            reviews = self._extract_reviews(page, place_id)
-            if reviews:
-                db.insert_reviews(place_id, reviews)
-
-            db.commit()
-            db.close()
-
-
-            
             # Go back to results
             try:
-                # Try multiple methods to go back
                 back_methods = [
                     lambda: page.keyboard.press("Escape"),
                     lambda: page.go_back(),
                     lambda: page.query_selector('button[aria-label*="Back"]').click() if page.query_selector('button[aria-label*="Back"]') else None
                 ]
-                
+
                 for method in back_methods:
                     try:
                         method()
@@ -366,28 +331,15 @@ class GoogleMapsScraper:
                         break
                     except:
                         continue
-                        
             except Exception as e:
                 print(f"   ⚠️ Error going back: {e}")
-            
+
             return data
-            previous_url = page.url
-            element.click(timeout=5000)
 
-            # Wait for URL to change, indicating detail pane has updated
-            try:
-                page.wait_for_function(f"window.location.href !== '{previous_url}'", timeout=10000)
-                print(f"   ✅ URL changed, detail panel loaded for business {index}")
-            except:
-                print(f"   ⚠️ URL did not change for business {index}")
-                return None
-
-            time.sleep(2)  # Allow animations to settle
-
-            
         except Exception as e:
             print(f"   ⚠️ Error in click extraction: {e}")
             return None
+
     
     def _extract_place_images(self, page):
         """Extract place images including background-style images"""
@@ -569,8 +521,7 @@ class GoogleMapsScraper:
                         break
                 except:
                     continue
-
-            
+    
             # Extract rating and reviews
             try:
                 # Rating
@@ -615,7 +566,6 @@ class GoogleMapsScraper:
                             review_match = re.search(r'(\d{1,3}(?:,\d{3})*|\d+)', review_text)
                             if review_match:
                                 review_count = int(review_match.group(1).replace(',', ''))
-                                review_count = review_count
                                 data['review_count'] = review_count
                                 print(f"   ✅ Found review count: {review_count}")
                                 break
@@ -669,13 +619,13 @@ class GoogleMapsScraper:
                         print(f"   Found name via aria-label: {data['name']}")
             except:
                 pass
-            
+
             # Try other name extraction methods if aria-label didn't work
             if not data['name']:
                 try:
                     heading_selectors = [
                         'div[class*="fontHeadline"]',
-                        'span[class*="fontHeadline"]', 
+                        'span[class*="fontHeadline"]',
                         'div[class*="fontDisplay"]',
                         'a[aria-label]'
                     ]
@@ -690,12 +640,62 @@ class GoogleMapsScraper:
                                 break
                 except:
                     pass
-            
+
+            # Extract address
+            try:
+                address_element = element.query_selector('div[class*="address"], span[class*="address"]')
+                if address_element:
+                    address_text = address_element.inner_text().strip()
+                    if address_text and len(address_text) > 5:
+                        data['address'] = address_text
+                        print(f"   Found address: {data['address']}")
+            except:
+                pass
+
+            # Extract phone
+            try:
+                phone_element = element.query_selector('span:has-text("+")')
+                if phone_element:
+                    phone_text = phone_element.inner_text().strip()
+                    phone_match = re.search(r'(\+?\d[\d\s\-\(\)]{8,})', phone_text)
+                    if phone_match:
+                        data['phone'] = phone_match.group(1).strip()
+                        print(f"   Found phone: {data['phone']}")
+            except:
+                pass
+
+            # Extract rating
+            try:
+                rating_element = element.query_selector('span[class*="MW4etd"], span[class*="ceNzKf"]')
+                if rating_element:
+                    rating_text = rating_element.inner_text().strip()
+                    rating_match = re.search(r'(\d+\.?\d*)', rating_text)
+                    if rating_match:
+                        rating_value = float(rating_match.group(1))
+                        if 0 <= rating_value <= 5:
+                            data['rating'] = rating_value
+                            print(f"   Found rating: {data['rating']}")
+            except:
+                pass
+
+            # Extract review count
+            try:
+                review_element = element.query_selector('span[class*="UY7F9"], span[class*="ceNzKf"]')
+                if review_element:
+                    review_text = review_element.inner_text().strip()
+                    review_match = re.search(r'(\d{1,3}(?:,\d{3})*|\d+)', review_text)
+                    if review_match:
+                        data['review_count'] = int(review_match.group(1).replace(',', ''))
+                        print(f"   Found review count: {data['review_count']}")
+            except:
+                pass
+
             return data if data['name'] else None
-            
+
         except Exception as e:
             print(f"   Error extracting card data: {str(e)}")
             return None
+
 
     def _extract_reviews(self, page, place_id):
         """Robust review extractor with smart container scrolling and fallbacks"""
@@ -828,6 +828,10 @@ class GoogleMapsScraper:
 
     def _store_results(self, results):
         """Store results in database"""
+        for place in results:
+            print(f"🔹 Name: {place['name']}, Address: {place['address']}, Rating: {place['rating']}, Category: {place['category']}")
+
+
         try:
             db = DatabaseHandler()
             stored_count = 0
@@ -857,28 +861,6 @@ class GoogleMapsScraper:
     def _clean_address(self, address):
         return address.replace('\ue0c8', '').replace('\n', '').strip()
 
-    def _store_single_place(self, place_data):
-        """Store a single place and return its ID."""
-        try:
-            db = DatabaseHandler()
-            if not db.place_exists(place_data['name'], place_data['latitude'], place_data['longitude']):
-                place_id = db.insert_place(place_data)
-                db.commit()
-                db.close()
-                if place_id:
-                    print(f"✅ Stored: {place_data['name']}")
-                    return place_id
-                else:
-                    print(f"❌ Failed to insert: {place_data['name']}")
-                    return None
-            else:
-                print(f"⚠️ Already exists: {place_data['name']}")
-                db.close()
-                return None
-        except Exception as e:
-            print(f"❌ Error storing place: {e}")
-            return None
-
     def close(self):
         """Clean up resources"""
         try:
@@ -886,4 +868,3 @@ class GoogleMapsScraper:
             self.playwright.stop()
         except:
             pass
-
